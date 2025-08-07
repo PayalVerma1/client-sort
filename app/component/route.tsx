@@ -1,18 +1,19 @@
 "use client";
-import { Funnel, Search, ArrowDownUp } from "lucide-react";
-import { useState } from "react";
+import { Funnel, Search, ArrowDownUp, GripVertical, X } from "lucide-react";
+import { useState, useEffect } from "react";
+
+interface SortCriterion {
+  id: string;
+  field: "name" | "createdAt" | "updatedAt" | "id";
+  direction: "asc" | "desc";
+  label: string;
+}
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("All");
   const [showSortPanel, setShowSortPanel] = useState(false);
-  const [clientNameSort, setClientNameSort] = useState<"A-Z" | "Z-A" | "">("");
-  const [createdAtSort, setCreatedAtSort] = useState<
-    "Newest-Oldest" | "Oldest-Newest" | ""
-  >("");
-  const [updatedAt, setUpdatedAt] = useState<
-    "Newest-Oldest" | "Oldest-Newest" | ""
-  >("");
-  const [clientIdSort, setClientIdSort] = useState<"A-Z" | "Z-A" | "">("");
+  const [sortCriteria, setSortCriteria] = useState<SortCriterion[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   const clients = [
     {
@@ -118,46 +119,147 @@ export default function Home() {
   ];
   const [sortedClients, setSortedClients] = useState(clients);
 
-  const applySort = () => {
+  // Load sort criteria from localStorage on component mount
+  useEffect(() => {
+    const savedCriteria = localStorage.getItem('clientSortCriteria');
+    if (savedCriteria) {
+      try {
+        const parsed = JSON.parse(savedCriteria);
+        setSortCriteria(parsed);
+        applySortWithCriteria(parsed);
+      } catch (error) {
+        console.error('Error parsing saved sort criteria:', error);
+      }
+    }
+  }, []);
+
+  // Save sort criteria to localStorage whenever it changes
+  useEffect(() => {
+    if (sortCriteria.length > 0) {
+      localStorage.setItem('clientSortCriteria', JSON.stringify(sortCriteria));
+    } else {
+      localStorage.removeItem('clientSortCriteria');
+    }
+  }, [sortCriteria]);
+
+  const applySortWithCriteria = (criteria: SortCriterion[]) => {
+    if (criteria.length === 0) {
+      setSortedClients(clients);
+      return;
+    }
+
     let sorted = [...clients];
 
-    if (clientNameSort === "A-Z") {
-      sorted.sort((a, b) => a.name.localeCompare(b.name));
-    } else if (clientNameSort === "Z-A") {
-      sorted.sort((a, b) => b.name.localeCompare(a.name));
-    }
+    // Apply sort criteria in reverse order (last criteria has highest priority)
+    criteria.reverse().forEach((criterion) => {
+      sorted.sort((a, b) => {
+        let aValue: any, bValue: any;
+        
+        switch (criterion.field) {
+          case "name":
+            aValue = a.name;
+            bValue = b.name;
+            break;
+          case "createdAt":
+            aValue = new Date(a.createdAt).getTime();
+            bValue = new Date(b.createdAt).getTime();
+            break;
+          case "updatedAt":
+            aValue = new Date(a.updatedAt).getTime();
+            bValue = new Date(b.updatedAt).getTime();
+            break;
+          case "id":
+            aValue = a.id;
+            bValue = b.id;
+            break;
+          default:
+            return 0;
+        }
 
-    if (createdAtSort === "Newest-Oldest") {
-      sorted.sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-    } else if (createdAtSort === "Oldest-Newest") {
-      sorted.sort(
-        (a, b) =>
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
-    }
-
-    if (updatedAt === "Newest-Oldest") {
-      sorted.sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
-    } else if (updatedAt === "Oldest-Newest") {
-      sorted.sort(
-        (a, b) =>
-          new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-      );
-    }
-
-    if (clientIdSort === "A-Z") {
-      sorted.sort((a, b) => a.id - b.id);
-    } else if (clientIdSort === "Z-A") {
-      sorted.sort((a, b) => b.id - a.id);
-    }
+        if (criterion.field === "name") {
+          const comparison = aValue.localeCompare(bValue);
+          return criterion.direction === "asc" ? comparison : -comparison;
+        } else {
+          if (aValue < bValue) return criterion.direction === "asc" ? -1 : 1;
+          if (aValue > bValue) return criterion.direction === "asc" ? 1 : -1;
+          return 0;
+        }
+      });
+    });
 
     setSortedClients(sorted);
+  };
+
+  const addSortCriterion = (field: SortCriterion["field"], label: string, specificDirection?: "asc" | "desc") => {
+    const existingIndex = sortCriteria.findIndex(c => c.field === field);
+    
+    if (existingIndex !== -1) {
+      // If specific direction provided, use it; otherwise toggle
+      const newCriteria = [...sortCriteria];
+      if (specificDirection) {
+        newCriteria[existingIndex].direction = specificDirection;
+      } else {
+        newCriteria[existingIndex].direction = newCriteria[existingIndex].direction === "asc" ? "desc" : "asc";
+      }
+      setSortCriteria(newCriteria);
+      applySortWithCriteria(newCriteria);
+    } else {
+      // Add new criterion with specified direction or default to "asc"
+      const newCriterion: SortCriterion = {
+        id: `${field}-${Date.now()}`,
+        field,
+        direction: specificDirection || "asc",
+        label
+      };
+      const newCriteria = [...sortCriteria, newCriterion];
+      setSortCriteria(newCriteria);
+      applySortWithCriteria(newCriteria);
+    }
+  };
+
+  const removeSortCriterion = (id: string) => {
+    const newCriteria = sortCriteria.filter(c => c.id !== id);
+    setSortCriteria(newCriteria);
+    applySortWithCriteria(newCriteria);
+  };
+
+  const clearAllCriteria = () => {
+    setSortCriteria([]);
+    setSortedClients(clients);
+  };
+
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const newCriteria = [...sortCriteria];
+    const draggedItem = newCriteria[draggedIndex];
+    
+    // Remove the dragged item
+    newCriteria.splice(draggedIndex, 1);
+    
+    // Insert at new position
+    newCriteria.splice(dropIndex, 0, draggedItem);
+    
+    setSortCriteria(newCriteria);
+    applySortWithCriteria(newCriteria);
+    setDraggedIndex(null);
+  };
+
+  const applySort = () => {
+    applySortWithCriteria(sortCriteria);
     setShowSortPanel(false);
   };
 
@@ -184,10 +286,10 @@ export default function Home() {
 
         <div className="flex gap-4 items-center">
           <Search className="w-5 h-5 text-gray-500" />
-          <ArrowDownUp className="w-5 h-5 text-gray-500" />
+          <ArrowDownUp className="w-5 h-5 text-gray-500 cursor-pointer"
+            onClick={() => setShowSortPanel(!showSortPanel)} />
           <Funnel
-            className="w-5 h-5 text-gray-500 cursor-pointer"
-            onClick={() => setShowSortPanel(!showSortPanel)}
+            className="w-5 h-5 text-gray-500"
           />
           <button className="bg-black text-white px-4 py-2 rounded">
             + Add Client
@@ -225,154 +327,170 @@ export default function Home() {
           </tbody>
         </table>
       </div>
-
+ 
       {showSortPanel && (
-        <div className="absolute right-10 top-40 w-80 bg-white shadow-xl border rounded-lg z-50">
-          <div className="p-4 border-b">
+        <div className="absolute right-50 top-30 w-80 bg-white shadow-xl border rounded-lg z-50">
+          <div className="p-3 border-b">
             <div className="flex flex-col items-start justify-between">
-              <span className="font-semibold text-gray-700">Sort By</span>
-              <div className="flex flex-col flex-wrap gap-1">
-                {clientNameSort && (
-                  <span className="flex gap-12 px-2 py-1 bg-blue-100 text-blue-600 text-xs rounded">
-                    Name: {clientNameSort}
-                     <button className="text-gray-400 hover:text-black" onClick={() => setClientNameSort("")}>✕</button>
-                  </span>
-                )}
-                {createdAtSort && (
-                  <span className="flex gap-4  px-2 py-1 bg-green-100 text-green-600 text-xs rounded">
-                    Created: {createdAtSort === "Newest-Oldest" ? "Newest" : "Oldest"}
-                     <button className="text-gray-400 hover:text-black" onClick={() => setCreatedAtSort("")}>✕</button>
-                  </span>
-                )}
-                {updatedAt && (
-                  <span className="flex gap-4  px-2 py-1 bg-purple-100 text-purple-600 text-xs rounded">
-                    Updated: {updatedAt === "Newest-Oldest" ? "Newest" : "Oldest"}
-                     <button className="text-gray-400 hover:text-black" onClick={() => setUpdatedAt("")}>✕</button>
-                  </span>
-                )}
-                {clientIdSort && (
-                  <span className="flex gap-17  px-2 py-1 bg-orange-100 text-orange-600 text-xs rounded">
-                    ID: {clientIdSort}
-                     <button className="text-gray-400 hover:text-black" onClick={() => setClientIdSort("")}>✕</button>
-                  </span>
-                )}
-              </div>
+              <span className="font-semibold text-black mb-2">Sort By</span>
+              <span className="text-sm text-black mb-3">Active Sorts (Drag to Change Priority):</span>
+
+              {sortCriteria.length > 0 ? (
+                <div className="w-full space-y-1">
+                  {sortCriteria.map((criterion, index) => (
+                    <div
+                      key={criterion.id}
+                      draggable
+                      onDragStart={() => handleDragStart(index)}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, index)}
+                      className={`flex items-center justify-between p-2 bg-gray-50 rounded border cursor-move hover:bg-gray-100 transition-colors ${
+                        draggedIndex === index ? 'opacity-50' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <GripVertical className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm text-black font-medium">{index + 1}.</span>
+                        <span className="text-sm text-black">
+                          {criterion.field === "name" ? "Client Name" :
+                           criterion.field === "createdAt" ? "Created At" :
+                           criterion.field === "updatedAt" ? "Updated At" : "Client Id"}:
+                        </span>
+                        <span className="text-sm text-black">
+                          {criterion.field === "name" ? 
+                            (criterion.direction === "asc" ? "A-Z" : "Z-A") :
+                           criterion.field === "createdAt" || criterion.field === "updatedAt" ?
+                            (criterion.direction === "asc" ? "Oldest to Newest" : "Newest to Oldest") :
+                            (criterion.direction === "asc" ? "A-Z" : "Z-A")}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => removeSortCriterion(criterion.id)}
+                        className="text-gray-900 hover:text-black hover:text-bold transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 italic">No active sorts</div>
+              )}
             </div>
           </div>
 
           <div className="p-4 space-y-4 text-sm text-gray-800">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium">Client Name</span>
-               
+            <div className="space-y-2">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium">Client Name</span>
+                </div>
+                <div className="flex gap-2">
+                  {["A-Z", "Z-A"].map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => addSortCriterion("name", "Client Name", option === "A-Z" ? "asc" : "desc")}
+                      className={`px-2 py-1 border rounded text-xs ${
+                        sortCriteria.find(c => c.field === "name" && 
+                          ((option === "A-Z" && c.direction === "asc") || 
+                           (option === "Z-A" && c.direction === "desc")))
+                          ? "bg-blue-100 text-blue-600"
+                          : ""
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex gap-2">
-                {["A-Z", "Z-A"].map((option) => (
+
+              <div>
+                <div className="mb-1 font-medium">Client Id</div>
+                <div className="flex gap-2">
+                  {["A-Z", "Z-A"].map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => addSortCriterion("id", "Client ID", option === "A-Z" ? "asc" : "desc")}
+                      className={`px-2 py-1 border rounded text-xs ${
+                        sortCriteria.find(c => c.field === "id" && 
+                          ((option === "A-Z" && c.direction === "asc") || 
+                           (option === "Z-A" && c.direction === "desc")))
+                          ? "bg-blue-100 text-blue-600" : ""
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium">Created At</span>
+                </div>
+                <div className="flex gap-2">
                   <button
-                    key={option}
-                    onClick={() => setClientNameSort(option as "A-Z" | "Z-A")}
+                    onClick={() => addSortCriterion("createdAt", "Created At", "asc")}
                     className={`px-2 py-1 border rounded text-xs ${
-                      clientNameSort === option
+                      sortCriteria.find(c => c.field === "createdAt" && c.direction === "asc")
                         ? "bg-blue-100 text-blue-600"
                         : ""
                     }`}
                   >
-                    {option}
+                    Oldest to Newest
                   </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium">Created At</span>
-               
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setCreatedAtSort("Newest-Oldest")}
-                  className={`px-2 py-1 border rounded text-xs ${
-                    createdAtSort === "Newest-Oldest"
-                      ? "bg-blue-100 text-blue-600"
-                      : ""
-                  }`}
-                >
-                  Newest to Oldest
-                </button>
-                <button
-                  onClick={() => setCreatedAtSort("Oldest-Newest")}
-                  className={`px-2 py-1 border rounded text-xs ${
-                    createdAtSort === "Oldest-Newest"
-                      ? "bg-blue-100 text-blue-600"
-                      : ""
-                  }`}
-                >
-                  Oldest to Newest
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium">Updated At</span>
-              
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setUpdatedAt("Newest-Oldest")}
-                  className={`px-2 py-1 border rounded text-xs ${
-                    updatedAt === "Newest-Oldest"
-                      ? "bg-blue-100 text-blue-600"
-                      : ""
-                  }`}
-                >
-                  Newest to Oldest
-                </button>
-                <button
-                  onClick={() => setUpdatedAt("Oldest-Newest")}
-                  className={`px-2 py-1 border rounded text-xs ${
-                    updatedAt === "Oldest-Newest"
-                      ? "bg-blue-100 text-blue-600"
-                      : ""
-                  }`}
-                >
-                  Oldest to Newest
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-1 font-medium">Client ID</div>
-              <div className="flex gap-2">
-                {["A-Z", "Z-A"].map((option) => (
                   <button
-                    key={option}
-                    onClick={() => setClientIdSort(option as "A-Z" | "Z-A")}
+                    onClick={() => addSortCriterion("createdAt", "Created At", "desc")}
                     className={`px-2 py-1 border rounded text-xs ${
-                      clientIdSort === option ? "bg-blue-100 text-blue-600" : ""
+                      sortCriteria.find(c => c.field === "createdAt" && c.direction === "desc")
+                        ? "bg-blue-100 text-blue-600"
+                        : ""
                     }`}
                   >
-                    {option}
+                    Newest to Oldest
                   </button>
-                ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium">Updated At</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => addSortCriterion("updatedAt", "Updated At", "asc")}
+                    className={`px-2 py-1 border rounded text-xs ${
+                      sortCriteria.find(c => c.field === "updatedAt" && c.direction === "asc")
+                        ? "bg-blue-100 text-blue-600"
+                        : ""
+                    }`}
+                  >
+                    Oldest to Newest
+                  </button>
+                  <button
+                    onClick={() => addSortCriterion("updatedAt", "Updated At", "desc")}
+                    className={`px-2 py-1 border rounded text-xs ${
+                      sortCriteria.find(c => c.field === "updatedAt" && c.direction === "desc")
+                        ? "bg-blue-100 text-blue-600"
+                        : ""
+                    }`}
+                  >
+                    Newest to Oldest
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-4 border-t">
+            <div className="flex justify-between items-center ">
               <button
-                className="text-sm text-gray-600 hover:underline"
-                onClick={() => {
-                  setClientNameSort("");
-                  setCreatedAtSort("");
-                  setUpdatedAt("");
-                  setClientIdSort("");
-                  setSortedClients(clients);
-                }}
+                className="text-sm text-gray-600 hover:underline disabled:opacity-50"
+                onClick={clearAllCriteria}
+                disabled={sortCriteria.length === 0}
               >
                 Clear all
               </button>
               <button
-                className="bg-black text-white text-sm px-4 py-1.5 rounded"
+                className="bg-black text-white text-sm px-4 py-1.5 rounded hover:bg-gray-800 transition-colors"
                 onClick={applySort}
               >
                 Apply Sort
